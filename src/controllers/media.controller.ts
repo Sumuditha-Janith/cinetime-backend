@@ -1,0 +1,366 @@
+import { Request, Response } from "express";
+import { Media } from "../models/Media";
+import { AuthRequest } from "../middleware/auth";
+import TMDBService, { TMDBMovie, TMDBTVShow } from "../services/tmdb.service";
+
+export const searchMedia = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { query, page = 1 } = req.query;
+    
+    if (!query || typeof query !== "string") {
+      res.status(400).json({ message: "Search query is required" });
+      return;
+    }
+
+    const tmdbResponse = await TMDBService.search(query as string, Number(page));
+    
+    // Transform TMDB data to consistent format
+    const results = tmdbResponse.results.map((item: TMDBMovie | TMDBTVShow) => ({
+      id: item.id,
+      title: "title" in item ? item.title : item.name,
+      overview: item.overview,
+      poster_path: item.poster_path,
+      backdrop_path: item.backdrop_path,
+      release_date: "release_date" in item ? item.release_date : item.first_air_date,
+      vote_average: item.vote_average,
+      vote_count: item.vote_count,
+      type: "title" in item ? "movie" : "tv",
+      genre_ids: item.genre_ids,
+    }));
+
+    res.status(200).json({
+      message: "Search successful",
+      data: results,
+      pagination: {
+        page: tmdbResponse.page,
+        total_pages: tmdbResponse.total_pages,
+        total_results: tmdbResponse.total_results,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err?.message });
+  }
+};
+
+export const getMediaDetails = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { tmdbId, type } = req.params;
+    
+    if (!tmdbId || !type) {
+      res.status(400).json({ message: "TMDB ID and type are required" });
+      return;
+    }
+
+    let details: any;
+    
+    if (type === "movie") {
+      details = await TMDBService.getMovieDetails(Number(tmdbId));
+    } else if (type === "tv") {
+      details = await TMDBService.getTVDetails(Number(tmdbId));
+    } else {
+      res.status(400).json({ message: "Invalid media type. Use 'movie' or 'tv'" });
+      return;
+    }
+
+    // Calculate watch time (assuming average movie is 120 mins, TV episode is 45 mins)
+    const watchTimeMinutes = type === "movie" 
+      ? details.runtime || 120 
+      : 45; // Default for TV shows
+
+    res.status(200).json({
+      message: "Media details fetched successfully",
+      data: {
+        ...details,
+        watchTimeMinutes,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err?.message });
+  }
+};
+
+export const addToWatchlist = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const { tmdbId, title, type, posterPath, releaseDate } = req.body;
+
+    if (!tmdbId || !title || !type) {
+      res.status(400).json({ message: "TMDB ID, title, and type are required" });
+      return;
+    }
+
+    // Check if already in watchlist
+    const existing = await Media.findOne({
+      tmdbId,
+      addedBy: req.user.sub,
+      type,
+    });
+
+    if (existing) {
+      res.status(400).json({ message: "Already in your watchlist" });
+      return;
+    }
+
+    // Get media details for watch time
+    let watchTimeMinutes = 0;
+    try {
+      if (type === "movie") {
+        const details = await TMDBService.getMovieDetails(tmdbId);
+        watchTimeMinutes = details.runtime || 120;
+      } else {
+        watchTimeMinutes = 45; // Default for TV shows
+      }
+    } catch {
+      watchTimeMinutes = type === "movie" ? 120 : 45;
+    }
+
+    const newMedia = new Media({
+      tmdbId,
+      title,
+      type,
+      posterPath: posterPath || "",
+      releaseDate: releaseDate || "",
+      addedBy: req.user.sub,
+      watchStatus: "planned",
+      watchTimeMinutes,
+    });
+
+    await newMedia.save();
+
+    res.status(201).json({
+      message: "Added to watchlist successfully",
+      data: newMedia,
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err?.message });
+  }
+};
+
+export const getWatchlist = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const skip = (page - 1) * limit;
+    const status = req.query.status as string;
+
+    const filter: any = { addedBy: req.user.sub };
+    if (status && ["planned", "watching", "completed"].includes(status)) {
+      filter.watchStatus = status;
+    }
+
+    const watchlist = await Media.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Media.countDocuments(filter);
+
+    // Calculate total watch time
+    const totalWatchTime = await Media.aggregate([
+      { $match: filter },
+      { $group: { _id: null, total: { $sum: "$watchTimeMinutes" } } },
+    ]);
+
+    res.status(200).json({
+      message: "Watchlist fetched successfully",
+      data: watchlist,
+      stats: {
+        totalWatchTime: totalWatchTime[0]?.total || 0,
+        totalItems: total,
+      },
+      pagination: {
+        page,
+        totalPages: Math.ceil(total / limit),
+        total,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err?.message });
+  }
+};
+
+export const updateWatchStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const { mediaId } = req.params;
+    const { watchStatus, rating } = req.body;
+
+    if (!mediaId) {
+      res.status(400).json({ message: "Media ID is required" });
+      return;
+    }
+
+    const media = await Media.findOne({
+      _id: mediaId,
+      addedBy: req.user.sub,
+    });
+
+    if (!media) {
+      res.status(404).json({ message: "Media not found in your watchlist" });
+      return;
+    }
+
+    if (watchStatus && ["planned", "watching", "completed"].includes(watchStatus)) {
+      media.watchStatus = watchStatus;
+    }
+
+    if (rating !== undefined) {
+      if (rating < 1 || rating > 5) {
+        res.status(400).json({ message: "Rating must be between 1 and 5" });
+        return;
+      }
+      media.rating = rating;
+    }
+
+    await media.save();
+
+    res.status(200).json({
+      message: "Watch status updated successfully",
+      data: media,
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err?.message });
+  }
+};
+
+export const removeFromWatchlist = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const { mediaId } = req.params;
+
+    const media = await Media.findOneAndDelete({
+      _id: mediaId,
+      addedBy: req.user.sub,
+    });
+
+    if (!media) {
+      res.status(404).json({ message: "Media not found in your watchlist" });
+      return;
+    }
+
+    res.status(200).json({
+      message: "Removed from watchlist successfully",
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err?.message });
+  }
+};
+
+export const getWatchlistStats = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const stats = await Media.aggregate([
+      { $match: { addedBy: req.user.sub } },
+      {
+        $group: {
+          _id: "$watchStatus",
+          count: { $sum: 1 },
+          totalTime: { $sum: "$watchTimeMinutes" },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalItems: { $sum: "$count" },
+          totalWatchTime: { $sum: "$totalTime" },
+          byStatus: {
+            $push: {
+              status: "$_id",
+              count: "$count",
+              time: "$totalTime",
+            },
+          },
+          byType: {
+            $push: {
+              type: "$type",
+              count: "$count",
+            },
+          },
+        },
+      },
+    ]);
+
+    const formattedStats = stats[0] || {
+      totalItems: 0,
+      totalWatchTime: 0,
+      byStatus: [],
+      byType: [],
+    };
+
+    // Format time to hours and minutes
+    const totalHours = Math.floor(formattedStats.totalWatchTime / 60);
+    const totalMinutes = formattedStats.totalWatchTime % 60;
+
+    res.status(200).json({
+      message: "Watchlist stats fetched successfully",
+      data: {
+        ...formattedStats,
+        totalWatchTimeFormatted: `${totalHours}h ${totalMinutes}m`,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err?.message });
+  }
+};
+
+export const getTrending = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const timeWindow = (req.query.timeWindow as "day" | "week") || "week";
+
+    const trending = await TMDBService.getTrending(timeWindow, page);
+
+    res.status(200).json({
+      message: "Trending content fetched successfully",
+      data: trending.results,
+      pagination: {
+        page: trending.page,
+        total_pages: trending.total_pages,
+        total_results: trending.total_results,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err?.message });
+  }
+};
+
+export const getPopularMovies = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+
+    const popular = await TMDBService.getPopularMovies(page);
+
+    res.status(200).json({
+      message: "Popular movies fetched successfully",
+      data: popular.results,
+      pagination: {
+        page: popular.page,
+        total_pages: popular.total_pages,
+        total_results: popular.total_results,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err?.message });
+  }
+};

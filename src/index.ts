@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import authRouter from "./routes/auth.routes";
-import mediaRouter from "./routes/media.routes";
+import mediaRouter from "./routes/media.routes"; //mediaroute
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import passwordRouter from "./routes/password.routes";
@@ -22,7 +22,7 @@ app.use(
 );
 
 app.use("/api/v1/auth", authRouter);
-app.use("/api/v1/media", mediaRouter);
+app.use("/api/v1/media", mediaRouter); //route added
 
 app.get("/", (_req, res) => {
   res.send("CINETIME Backend is Running 🎬");
