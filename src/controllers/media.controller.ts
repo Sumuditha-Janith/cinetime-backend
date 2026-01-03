@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { Media } from "../models/Media";
 import { AuthRequest } from "../middleware/auth";
 import TMDBService, { TMDBMovie, TMDBTVShow } from "../services/tmdb.service";
+import mongoose from "mongoose";
 
 export const searchMedia = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -215,51 +216,75 @@ export const getWatchlist = async (req: AuthRequest, res: Response): Promise<voi
 };
 
 export const updateWatchStatus = async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-        if (!req.user) {
-            res.status(401).json({ message: "Unauthorized" });
-            return;
-        }
-
-        const { mediaId } = req.params;
-        const { watchStatus, rating } = req.body;
-
-        if (!mediaId) {
-            res.status(400).json({ message: "Media ID is required" });
-            return;
-        }
-
-        const media = await Media.findOne({
-            _id: mediaId,
-            addedBy: req.user.sub,
-        });
-
-        if (!media) {
-            res.status(404).json({ message: "Media not found in your watchlist" });
-            return;
-        }
-
-        if (watchStatus && ["planned", "watching", "completed"].includes(watchStatus)) {
-            media.watchStatus = watchStatus;
-        }
-
-        if (rating !== undefined) {
-            if (rating < 1 || rating > 5) {
-                res.status(400).json({ message: "Rating must be between 1 and 5" });
-                return;
-            }
-            media.rating = rating;
-        }
-
-        await media.save();
-
-        res.status(200).json({
-            message: "Watch status updated successfully",
-            data: media,
-        });
-    } catch (err: any) {
-        res.status(500).json({ message: err?.message });
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
     }
+
+    const { mediaId } = req.params;
+    const { watchStatus, rating } = req.body;
+
+    console.log(`🔄 Update status request for mediaId: ${mediaId}`);
+    console.log(`📝 New status: ${watchStatus}, Rating: ${rating}`);
+
+    if (!mediaId) {
+      res.status(400).json({ message: "Media ID is required" });
+      return;
+    }
+
+    // Check if mediaId is a valid ObjectId
+    if (!mongoose.Types.ObjectId.isValid(mediaId)) {
+      console.error(`❌ Invalid mediaId format: ${mediaId}`);
+      res.status(400).json({ message: "Invalid media ID format" });
+      return;
+    }
+
+    const media = await Media.findOne({
+      _id: new mongoose.Types.ObjectId(mediaId),
+      addedBy: req.user.sub,
+    });
+
+    if (!media) {
+      console.error(`❌ Media not found: ${mediaId} for user ${req.user.sub}`);
+      res.status(404).json({ message: "Media not found in your watchlist" });
+      return;
+    }
+
+    console.log(`📋 Found media: ${media.title}, Current status: ${media.watchStatus}`);
+
+    if (watchStatus && ["planned", "watching", "completed"].includes(watchStatus)) {
+      console.log(`🔄 Changing status from ${media.watchStatus} to ${watchStatus}`);
+      media.watchStatus = watchStatus;
+    }
+
+    if (rating !== undefined) {
+      if (rating < 1 || rating > 5) {
+        res.status(400).json({ message: "Rating must be between 1 and 5" });
+        return;
+      }
+      media.rating = rating;
+    }
+
+    await media.save();
+    
+    console.log(`✅ Saved: ${media.title} is now ${media.watchStatus}`);
+    console.log(`📊 Watch time: ${media.watchTimeMinutes} minutes`);
+
+    res.status(200).json({
+      message: "Watch status updated successfully",
+      data: {
+        _id: media._id,
+        title: media.title,
+        watchStatus: media.watchStatus,
+        watchTimeMinutes: media.watchTimeMinutes,
+        type: media.type
+      },
+    });
+  } catch (err: any) {
+    console.error("Update Status Error:", err);
+    res.status(500).json({ message: err?.message });
+  }
 };
 
 export const removeFromWatchlist = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -290,164 +315,167 @@ export const removeFromWatchlist = async (req: AuthRequest, res: Response): Prom
 };
 
 export const getWatchlistStats = async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-        if (!req.user) {
-            res.status(401).json({ message: "Unauthorized" });
-            return;
-        }
-
-        const userId = req.user.sub;
-
-        // Get all stats in parallel for better performance
-        const [
-            totalItems,
-            movies,
-            tvShows,
-            statusStats,
-            totalWatchTime,
-            movieWatchTime,
-            tvWatchTime
-        ] = await Promise.all([
-            // Total items
-            Media.countDocuments({ addedBy: userId }),
-
-            // Movie stats
-            Media.aggregate([
-                { $match: { addedBy: userId, type: "movie" } },
-                {
-                    $group: {
-                        _id: null,
-                        count: { $sum: 1 },
-                        totalTime: { $sum: "$watchTimeMinutes" },
-                        completedCount: {
-                            $sum: { $cond: [{ $eq: ["$watchStatus", "completed"] }, 1, 0] }
-                        }
-                    }
-                }
-            ]),
-
-            // TV show stats
-            Media.aggregate([
-                { $match: { addedBy: userId, type: "tv" } },
-                {
-                    $group: {
-                        _id: null,
-                        count: { $sum: 1 },
-                        totalTime: { $sum: "$watchTimeMinutes" },
-                        completedCount: {
-                            $sum: { $cond: [{ $eq: ["$watchStatus", "completed"] }, 1, 0] }
-                        }
-                    }
-                }
-            ]),
-
-            // Status stats
-            Media.aggregate([
-                { $match: { addedBy: userId } },
-                {
-                    $group: {
-                        _id: "$watchStatus",
-                        count: { $sum: 1 },
-                        totalTime: { $sum: "$watchTimeMinutes" },
-                    },
-                },
-            ]),
-
-            // Total watch time (all)
-            Media.aggregate([
-                { $match: { addedBy: userId } },
-                { $group: { _id: null, total: { $sum: "$watchTimeMinutes" } } },
-            ]),
-
-            // Movie watch time (only completed)
-            Media.aggregate([
-                {
-                    $match: {
-                        addedBy: userId,
-                        type: "movie",
-                        watchStatus: "completed"
-                    }
-                },
-                { $group: { _id: null, total: { $sum: "$watchTimeMinutes" } } },
-            ]),
-
-            // TV watch time (only completed)
-            Media.aggregate([
-                {
-                    $match: {
-                        addedBy: userId,
-                        type: "tv",
-                        watchStatus: "completed"
-                    }
-                },
-                { $group: { _id: null, total: { $sum: "$watchTimeMinutes" } } },
-            ])
-        ]);
-
-        // Format status stats
-        const byStatus = statusStats.map((stat: any) => ({
-            status: stat._id,
-            count: stat.count,
-            time: stat.totalTime || 0,
-        }));
-
-        // Get type distribution
-        const byType = [
-            { type: "movie", count: movies[0]?.count || 0 },
-            { type: "tv", count: tvShows[0]?.count || 0 }
-        ];
-
-        // Calculate totals
-        const totalWatchTimeValue = totalWatchTime[0]?.total || 0;
-        const movieCompletedTime = movieWatchTime[0]?.total || 0;
-        const tvCompletedTime = tvWatchTime[0]?.total || 0;
-        const completedMovies = movies[0]?.completedCount || 0;
-        const completedTVShows = tvShows[0]?.completedCount || 0;
-
-        // Format times
-        const formatTime = (minutes: number): string => {
-            const hours = Math.floor(minutes / 60);
-            const mins = minutes % 60;
-            return `${hours}h ${mins}m`;
-        };
-
-        res.status(200).json({
-            message: "Watchlist stats fetched successfully",
-            data: {
-                totalItems,
-                totalWatchTime: totalWatchTimeValue,
-                totalWatchTimeFormatted: formatTime(totalWatchTimeValue),
-
-                // Movie-specific stats
-                movieStats: {
-                    total: movies[0]?.count || 0,
-                    completed: completedMovies,
-                    watchTime: movieCompletedTime,
-                    watchTimeFormatted: formatTime(movieCompletedTime)
-                },
-
-                // TV-specific stats
-                tvStats: {
-                    total: tvShows[0]?.count || 0,
-                    completed: completedTVShows,
-                    watchTime: tvCompletedTime,
-                    watchTimeFormatted: formatTime(tvCompletedTime)
-                },
-
-                // Status distribution
-                byStatus,
-                byType,
-
-                // Quick access counts
-                plannedCount: byStatus.find((s: any) => s.status === "planned")?.count || 0,
-                watchingCount: byStatus.find((s: any) => s.status === "watching")?.count || 0,
-                completedCount: byStatus.find((s: any) => s.status === "completed")?.count || 0,
-            },
-        });
-    } catch (err: any) {
-        console.error("Get Stats Error:", err);
-        res.status(500).json({ message: err?.message });
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
     }
+
+    const userId = req.user.sub;
+    console.log(`📊 Fetching stats for user: ${userId}`);
+
+    // Get simple counts first to verify
+    const totalItems = await Media.countDocuments({ addedBy: userId });
+    const completedItems = await Media.countDocuments({ 
+      addedBy: userId, 
+      watchStatus: "completed" 
+    });
+    const plannedItems = await Media.countDocuments({ 
+      addedBy: userId, 
+      watchStatus: "planned" 
+    });
+    const watchingItems = await Media.countDocuments({ 
+      addedBy: userId, 
+      watchStatus: "watching" 
+    });
+
+    console.log(`📈 Direct counts: Total=${totalItems}, Completed=${completedItems}, Planned=${plannedItems}, Watching=${watchingItems}`);
+
+    // Get all items to debug
+    const allItems = await Media.find({ addedBy: userId })
+      .select("title type watchStatus watchTimeMinutes")
+      .lean();
+
+    console.log(`📋 All items in database (${allItems.length}):`);
+    allItems.forEach(item => {
+      console.log(`  - ${item.title}: ${item.watchStatus} (${item.watchTimeMinutes} mins)`);
+    });
+
+    // Calculate stats manually to ensure accuracy
+    let totalWatchTime = 0;
+    let movieStats = { total: 0, completed: 0, watchTime: 0 };
+    let tvStats = { total: 0, completed: 0, watchTime: 0 };
+    const byStatus: any[] = [];
+    const byType: any[] = [];
+
+    // Initialize status counts
+    const statusCounts: Record<string, { count: number, time: number }> = {
+      planned: { count: 0, time: 0 },
+      watching: { count: 0, time: 0 },
+      completed: { count: 0, time: 0 }
+    };
+
+    // Initialize type counts
+    const typeCounts: Record<string, number> = {
+      movie: 0,
+      tv: 0
+    };
+
+    // Calculate all stats
+    allItems.forEach(item => {
+      // Count by type
+      typeCounts[item.type] = (typeCounts[item.type] || 0) + 1;
+
+      // Count by status
+      const status = item.watchStatus || "planned";
+      statusCounts[status].count += 1;
+      
+      // Add watch time if completed
+      if (status === "completed") {
+        const watchTime = item.watchTimeMinutes || 0;
+        statusCounts.completed.time += watchTime;
+        totalWatchTime += watchTime;
+
+        // Add to type-specific completed stats
+        if (item.type === "movie") {
+          movieStats.completed += 1;
+          movieStats.watchTime += watchTime;
+        } else if (item.type === "tv") {
+          tvStats.completed += 1;
+          tvStats.watchTime += watchTime;
+        }
+      }
+
+      // Update type totals
+      if (item.type === "movie") {
+        movieStats.total += 1;
+      } else if (item.type === "tv") {
+        tvStats.total += 1;
+      }
+    });
+
+    // Convert status counts to array
+    Object.entries(statusCounts).forEach(([status, data]) => {
+      if (data.count > 0) {
+        byStatus.push({
+          status,
+          count: data.count,
+          time: data.time
+        });
+      }
+    });
+
+    // Convert type counts to array
+    Object.entries(typeCounts).forEach(([type, count]) => {
+      if (count > 0) {
+        byType.push({ type, count });
+      }
+    });
+
+    // Format times
+    const formatTime = (minutes: number): string => {
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      return `${hours}h ${mins}m`;
+    };
+
+    // Build response
+    const responseData = {
+      totalItems,
+      totalWatchTime,
+      totalWatchTimeFormatted: formatTime(totalWatchTime),
+
+      movieStats: {
+        total: movieStats.total,
+        completed: movieStats.completed,
+        watchTime: movieStats.watchTime,
+        watchTimeFormatted: formatTime(movieStats.watchTime)
+      },
+
+      tvStats: {
+        total: tvStats.total,
+        completed: tvStats.completed,
+        watchTime: tvStats.watchTime,
+        watchTimeFormatted: formatTime(tvStats.watchTime)
+      },
+
+      byStatus,
+      byType,
+
+      plannedCount: statusCounts.planned.count,
+      watchingCount: statusCounts.watching.count,
+      completedCount: statusCounts.completed.count,
+    };
+
+    console.log("📊 Calculated stats response:");
+    console.log("- Total items:", totalItems);
+    console.log("- Completed count:", responseData.completedCount);
+    console.log("- Planned count:", responseData.plannedCount);
+    console.log("- Watching count:", responseData.watchingCount);
+    console.log("- Total watch time:", totalWatchTime, "mins");
+    console.log("- Movie stats:", movieStats);
+    console.log("- TV stats:", tvStats);
+    console.log("- By status:", byStatus);
+    console.log("- By type:", byType);
+
+    res.status(200).json({
+      message: "Watchlist stats fetched successfully",
+      data: responseData,
+    });
+  } catch (err: any) {
+    console.error("Get Stats Error:", err);
+    res.status(500).json({ message: err?.message });
+  }
 };
 
 export const getTrending = async (req: Request, res: Response): Promise<void> => {
@@ -489,4 +517,121 @@ export const getPopularMovies = async (req: Request, res: Response): Promise<voi
     } catch (err: any) {
         res.status(500).json({ message: err?.message });
     }
+};
+
+export const debugWatchlist = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const userId = req.user.sub;
+    
+    // Get all watchlist items with details
+    const watchlist = await Media.find({ addedBy: userId })
+      .select('title type watchStatus watchTimeMinutes')
+      .lean();
+    
+    // Get raw counts
+    const totalItems = await Media.countDocuments({ addedBy: userId });
+    const completedItems = await Media.countDocuments({ 
+      addedBy: userId, 
+      watchStatus: "completed" 
+    });
+    const plannedItems = await Media.countDocuments({ 
+      addedBy: userId, 
+      watchStatus: "planned" 
+    });
+    const watchingItems = await Media.countDocuments({ 
+      addedBy: userId, 
+      watchStatus: "watching" 
+    });
+    
+    // Get completed watch time
+    const completedTimeAgg = await Media.aggregate([
+      { 
+        $match: { 
+          addedBy: userId, 
+          watchStatus: "completed" 
+        } 
+      },
+      { 
+        $group: { 
+          _id: null, 
+          totalTime: { $sum: "$watchTimeMinutes" } 
+        } 
+      }
+    ]);
+    
+    const completedTime = completedTimeAgg[0]?.totalTime || 0;
+
+    res.status(200).json({
+      message: "Debug info",
+      data: {
+        userId,
+        totalItems,
+        completedItems,
+        plannedItems,
+        watchingItems,
+        completedTime,
+        watchlist
+      }
+    });
+  } catch (err: any) {
+    console.error("Debug Error:", err);
+    res.status(500).json({ message: err?.message });
+  }
+};
+
+/////////////////////////////////
+
+export const testStats = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const userId = req.user.sub;
+    
+    // Get simple counts directly
+    const totalItems = await Media.countDocuments({ addedBy: userId });
+    const completedItems = await Media.countDocuments({ 
+      addedBy: userId, 
+      watchStatus: "completed" 
+    });
+    
+    // Get all items to debug
+    const allItems = await Media.find({ addedBy: userId })
+      .select("title type watchStatus watchTimeMinutes")
+      .lean();
+    
+    // Calculate completed watch time manually
+    let completedWatchTime = 0;
+    allItems.forEach(item => {
+      if (item.watchStatus === "completed") {
+        completedWatchTime += item.watchTimeMinutes || 0;
+      }
+    });
+    
+    res.status(200).json({
+      message: "Test stats",
+      data: {
+        userId,
+        totalItems,
+        completedItems,
+        completedWatchTime,
+        items: allItems.map(item => ({
+          title: item.title,
+          type: item.type,
+          status: item.watchStatus,
+          time: item.watchTimeMinutes
+        }))
+      }
+    });
+  } catch (err: any) {
+    console.error("Test Stats Error:", err);
+    res.status(500).json({ message: err?.message });
+  }
 };

@@ -9,8 +9,11 @@ import {
   getWatchlistStats,
   getTrending,
   getPopularMovies,
+  debugWatchlist,
+
 } from "../controllers/media.controller";
 import { authenticate } from "../middleware/auth";
+import { testStats } from "../controllers/media.controller";
 
 const router = Router();
 
@@ -24,7 +27,9 @@ router.get("/popular", getPopularMovies);
 router.post("/watchlist", authenticate, addToWatchlist);
 router.get("/watchlist", authenticate, getWatchlist);
 router.get("/watchlist/stats", authenticate, getWatchlistStats);
+router.get("/watchlist/debug", authenticate, debugWatchlist);
 router.put("/watchlist/:mediaId/status", authenticate, updateWatchStatus);
 router.delete("/watchlist/:mediaId", authenticate, removeFromWatchlist);
+router.get("/watchlist/test", authenticate, testStats);
 
 export default router;
