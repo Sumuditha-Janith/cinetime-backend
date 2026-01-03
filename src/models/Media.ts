@@ -11,6 +11,10 @@ export interface IMedia extends Document {
   watchStatus: "planned" | "watching" | "completed";
   rating?: number;
   watchTimeMinutes: number;
+  vote_average?: number;
+  vote_count?: number;
+  overview?: string;
+  backdrop_path?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -29,7 +33,11 @@ const mediaSchema = new Schema<IMedia>(
       default: "planned"
     },
     rating: { type: Number, min: 1, max: 5 },
-    watchTimeMinutes: { type: Number, default: 0 }
+    watchTimeMinutes: { type: Number, default: 0 },
+    vote_average: { type: Number },
+    vote_count: { type: Number },
+    overview: { type: String },
+    backdrop_path: { type: String }
   },
   { timestamps: true }
 );

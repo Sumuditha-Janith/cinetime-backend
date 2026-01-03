@@ -105,16 +105,32 @@ export const addToWatchlist = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    // Get media details for watch time
+    // Get media details from TMDB
+    let tmdbDetails: any = {};
     let watchTimeMinutes = 0;
+    
     try {
       if (type === "movie") {
         const details = await TMDBService.getMovieDetails(tmdbId);
         watchTimeMinutes = details.runtime || 120;
+        tmdbDetails = {
+          vote_average: details.vote_average,
+          vote_count: details.vote_count,
+          overview: details.overview,
+          backdrop_path: details.backdrop_path
+        };
       } else {
-        watchTimeMinutes = 45; // Default for TV shows
+        const details = await TMDBService.getTVDetails(tmdbId);
+        watchTimeMinutes = 45;
+        tmdbDetails = {
+          vote_average: details.vote_average,
+          vote_count: details.vote_count,
+          overview: details.overview,
+          backdrop_path: details.backdrop_path
+        };
       }
-    } catch {
+    } catch (error) {
+      console.error("Failed to fetch TMDB details:", error);
       watchTimeMinutes = type === "movie" ? 120 : 45;
     }
 
@@ -127,6 +143,10 @@ export const addToWatchlist = async (req: AuthRequest, res: Response): Promise<v
       addedBy: req.user.sub,
       watchStatus: "planned",
       watchTimeMinutes,
+      vote_average: tmdbDetails.vote_average,
+      vote_count: tmdbDetails.vote_count,
+      overview: tmdbDetails.overview,
+      backdrop_path: tmdbDetails.backdrop_path
     });
 
     await newMedia.save();
