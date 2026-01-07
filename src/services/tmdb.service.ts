@@ -1,4 +1,4 @@
-import axios, { AxiosResponse } from 'axios';
+import axios from 'axios';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -49,44 +49,7 @@ export interface TMDBResponse {
     total_results: number;
 }
 
-// TMDB API response types
-interface TMDBMovieDetailsResponse {
-    id: number;
-    title: string;
-    overview: string;
-    poster_path: string;
-    backdrop_path: string;
-    release_date: string;
-    vote_average: number;
-    vote_count: number;
-    genre_ids?: number[];
-    genres?: { id: number; name: string }[];
-    runtime?: number;
-    tagline?: string;
-    status?: string;
-    budget?: number;
-    revenue?: number;
-    homepage?: string;
-    imdb_id?: string;
-    [key: string]: any;
-}
-
-interface TMDBTVDetailsResponse {
-    id: number;
-    name: string;
-    overview: string;
-    poster_path: string;
-    backdrop_path: string;
-    first_air_date: string;
-    vote_average: number;
-    vote_count: number;
-    genre_ids?: number[];
-    number_of_seasons?: number;
-    number_of_episodes?: number;
-    episode_run_time?: number[];
-    [key: string]: any;
-}
-
+// Add interface for TMDB API response
 interface TMDBMultiSearchResponse {
     page: number;
     results: Array<{
@@ -107,6 +70,117 @@ interface TMDBMultiSearchResponse {
     total_results: number;
 }
 
+// Add interface for Movie Details response
+interface TMDBMovieDetailsResponse {
+    id: number;
+    title: string;
+    overview: string;
+    poster_path: string;
+    backdrop_path: string;
+    release_date: string;
+    vote_average: number;
+    vote_count: number;
+    runtime: number;
+    genres: { id: number; name: string }[];
+    tagline: string;
+    status: string;
+    budget: number;
+    revenue: number;
+    homepage: string;
+    imdb_id: string;
+    videos?: {
+        results: Array<{
+            id: string;
+            key: string;
+            name: string;
+            site: string;
+            type: string;
+        }>;
+    };
+    credits?: {
+        cast: Array<{
+            id: number;
+            name: string;
+            character: string;
+            profile_path: string;
+        }>;
+        crew: Array<{
+            id: number;
+            name: string;
+            job: string;
+            profile_path: string;
+        }>;
+    };
+    similar?: {
+        results: Array<{
+            id: number;
+            title?: string;
+            name?: string;
+            poster_path: string;
+            vote_average: number;
+        }>;
+    };
+}
+
+// Add interface for TV Details response
+interface TMDBTVDetailsResponse {
+    id: number;
+    name: string;
+    overview: string;
+    poster_path: string;
+    backdrop_path: string;
+    first_air_date: string;
+    vote_average: number;
+    vote_count: number;
+    number_of_seasons: number;
+    number_of_episodes: number;
+    episode_run_time: number[];
+    genres: { id: number; name: string }[];
+    status: string;
+    homepage: string;
+    videos?: {
+        results: Array<{
+            id: string;
+            key: string;
+            name: string;
+            site: string;
+            type: string;
+        }>;
+    };
+    credits?: {
+        cast: Array<{
+            id: number;
+            name: string;
+            character: string;
+            profile_path: string;
+        }>;
+        crew: Array<{
+            id: number;
+            name: string;
+            job: string;
+            profile_path: string;
+        }>;
+    };
+    similar?: {
+        results: Array<{
+            id: number;
+            title?: string;
+            name?: string;
+            poster_path: string;
+            vote_average: number;
+        }>;
+    };
+    seasons?: Array<{
+        season_number: number;
+        episode_count: number;
+        name: string;
+        overview: string;
+        poster_path: string;
+        air_date: string;
+    }>;
+}
+
+// Add interface for Popular Movies response
 interface TMDBPopularMoviesResponse {
     page: number;
     results: Array<{
@@ -124,6 +198,7 @@ interface TMDBPopularMoviesResponse {
     total_results: number;
 }
 
+// Add interface for Trending response
 interface TMDBTrendingResponse {
     page: number;
     results: Array<{
@@ -138,30 +213,10 @@ interface TMDBTrendingResponse {
         vote_average: number;
         vote_count: number;
         genre_ids: number[];
-        media_type: "movie" | "tv";
+        media_type: "movie" | "tv" | "person";
     }>;
     total_pages: number;
     total_results: number;
-}
-
-interface TMDBGenresResponse {
-    genres: { id: number; name: string }[];
-}
-
-interface TMDBSeasonResponse {
-    episodes: Array<{
-        episode_number: number;
-        name: string;
-        overview: string;
-        air_date: string;
-        runtime?: number;
-        still_path?: string;
-    }>;
-    season_number: number;
-    name: string;
-    overview: string;
-    air_date: string;
-    [key: string]: any;
 }
 
 class TMDBService {
@@ -188,19 +243,17 @@ class TMDBService {
                 params: { query, page },
             });
 
-            const data = response.data;
-            
             // Filter out items without media_type
-            const filteredResults = data.results.filter((item) =>
+            const filteredResults = response.data.results.filter((item) =>
                 item.media_type === 'movie' || item.media_type === 'tv'
             );
 
-            // Transform to our format
+            // Transform to our internal format
             const results = filteredResults.map((item) => {
                 if (item.media_type === 'movie') {
-                    const movie: TMDBMovie = {
+                    return {
                         id: item.id,
-                        title: item.title || '',
+                        title: item.title || 'Unknown Movie',
                         overview: item.overview,
                         poster_path: item.poster_path,
                         backdrop_path: item.backdrop_path,
@@ -208,13 +261,12 @@ class TMDBService {
                         vote_average: item.vote_average,
                         vote_count: item.vote_count,
                         genre_ids: item.genre_ids,
-                        media_type: 'movie',
+                        media_type: 'movie' as const,
                     };
-                    return movie;
                 } else {
-                    const tvShow: TMDBTVShow = {
+                    return {
                         id: item.id,
-                        name: item.name || '',
+                        name: item.name || 'Unknown TV Show',
                         overview: item.overview,
                         poster_path: item.poster_path,
                         backdrop_path: item.backdrop_path,
@@ -222,17 +274,16 @@ class TMDBService {
                         vote_average: item.vote_average,
                         vote_count: item.vote_count,
                         genre_ids: item.genre_ids,
-                        media_type: 'tv',
+                        media_type: 'tv' as const,
                     };
-                    return tvShow;
                 }
             });
 
             return {
-                page: data.page,
+                page: response.data.page,
                 results: results,
-                total_pages: data.total_pages,
-                total_results: data.total_results,
+                total_pages: response.data.total_pages,
+                total_results: response.data.total_results,
             };
         } catch (error: any) {
             console.error('TMDB Search Error:', error.message);
@@ -250,6 +301,7 @@ class TMDBService {
             });
 
             const data = response.data;
+
             return {
                 id: data.id,
                 title: data.title,
@@ -259,8 +311,7 @@ class TMDBService {
                 release_date: data.release_date,
                 vote_average: data.vote_average,
                 vote_count: data.vote_count,
-                genre_ids: data.genre_ids || [],
-                media_type: 'movie',
+                genre_ids: data.genres.map(g => g.id),
                 runtime: data.runtime || 120,
                 genres: data.genres || [],
                 tagline: data.tagline || '',
@@ -269,6 +320,7 @@ class TMDBService {
                 revenue: data.revenue || 0,
                 homepage: data.homepage || '',
                 imdb_id: data.imdb_id || '',
+                media_type: 'movie' as const,
             };
         } catch (error: any) {
             console.error('TMDB Movie Details Error:', error.message);
@@ -286,23 +338,31 @@ class TMDBService {
             });
 
             const data = response.data;
+
             return {
                 id: data.id,
                 name: data.name,
-                title: data.name, // Also include as title for consistency
+                title: data.name, // Add title alias for consistency
                 overview: data.overview,
                 poster_path: data.poster_path,
                 backdrop_path: data.backdrop_path,
                 first_air_date: data.first_air_date,
-                release_date: data.first_air_date, // Also include as release_date
+                release_date: data.first_air_date, // Add release_date alias
                 vote_average: data.vote_average,
                 vote_count: data.vote_count,
-                genre_ids: data.genre_ids || [],
+                genre_ids: data.genres.map(g => g.id),
+                genres: data.genres || [],
                 runtime: 45,
-                media_type: 'tv',
-                number_of_seasons: data.number_of_seasons,
-                number_of_episodes: data.number_of_episodes,
-                episode_run_time: data.episode_run_time,
+                media_type: 'tv' as const,
+                number_of_seasons: data.number_of_seasons || 1,
+                number_of_episodes: data.number_of_episodes || 1,
+                episode_run_time: data.episode_run_time || [45],
+                status: data.status || 'Ended',
+                homepage: data.homepage || '',
+                videos: data.videos,
+                credits: data.credits,
+                similar: data.similar,
+                seasons: data.seasons,
             };
         } catch (error: any) {
             console.error('TMDB TV Details Error:', error.message);
@@ -317,9 +377,7 @@ class TMDBService {
                 params: { page },
             });
 
-            const data = response.data;
-            
-            const resultsWithType: TMDBMovie[] = data.results.map((item) => ({
+            const resultsWithType = response.data.results.map((item) => ({
                 id: item.id,
                 title: item.title,
                 overview: item.overview,
@@ -329,14 +387,14 @@ class TMDBService {
                 vote_average: item.vote_average,
                 vote_count: item.vote_count,
                 genre_ids: item.genre_ids,
-                media_type: 'movie',
+                media_type: 'movie' as const
             }));
 
             return {
-                page: data.page,
+                page: response.data.page,
                 results: resultsWithType,
-                total_pages: data.total_pages,
-                total_results: data.total_results,
+                total_pages: response.data.total_pages,
+                total_results: response.data.total_results,
             };
         } catch (error: any) {
             console.error('TMDB Popular Movies Error:', error.message);
@@ -351,48 +409,45 @@ class TMDBService {
                 params: { page },
             });
 
-            const data = response.data;
-            
-            const filteredResults = data.results
-                .filter((item) => item.media_type === 'movie' || item.media_type === 'tv');
-
-            const results: (TMDBMovie | TMDBTVShow)[] = filteredResults.map((item) => {
-                if (item.media_type === 'movie') {
-                    const movie: TMDBMovie = {
-                        id: item.id,
-                        title: item.title || item.name || 'Unknown Movie',
-                        overview: item.overview,
-                        poster_path: item.poster_path,
-                        backdrop_path: item.backdrop_path,
-                        release_date: item.release_date || item.first_air_date || '',
-                        vote_average: item.vote_average,
-                        vote_count: item.vote_count,
-                        genre_ids: item.genre_ids,
-                        media_type: 'movie',
-                    };
-                    return movie;
-                } else {
-                    const tvShow: TMDBTVShow = {
-                        id: item.id,
-                        name: item.name || item.title || 'Unknown TV Show',
-                        overview: item.overview,
-                        poster_path: item.poster_path,
-                        backdrop_path: item.backdrop_path,
-                        first_air_date: item.first_air_date || item.release_date || '',
-                        vote_average: item.vote_average,
-                        vote_count: item.vote_count,
-                        genre_ids: item.genre_ids,
-                        media_type: 'tv',
-                    };
-                    return tvShow;
-                }
-            });
+            const filteredResults = response.data.results
+                .filter((item) => item.media_type === 'movie' || item.media_type === 'tv')
+                .map((item) => {
+                    if (item.media_type === 'movie') {
+                        return {
+                            id: item.id,
+                            title: item.title || item.name || 'Unknown Movie',
+                            overview: item.overview,
+                            poster_path: item.poster_path,
+                            backdrop_path: item.backdrop_path,
+                            release_date: item.release_date || item.first_air_date || '',
+                            vote_average: item.vote_average,
+                            vote_count: item.vote_count,
+                            genre_ids: item.genre_ids || [],
+                            media_type: 'movie' as const,
+                        };
+                    } else {
+                        return {
+                            id: item.id,
+                            name: item.name || item.title || 'Unknown TV Show',
+                            title: item.name || item.title || 'Unknown TV Show', // Add title alias
+                            overview: item.overview,
+                            poster_path: item.poster_path,
+                            backdrop_path: item.backdrop_path,
+                            first_air_date: item.first_air_date || item.release_date || '',
+                            release_date: item.first_air_date || item.release_date || '', // Add release_date alias
+                            vote_average: item.vote_average,
+                            vote_count: item.vote_count,
+                            genre_ids: item.genre_ids || [],
+                            media_type: 'tv' as const,
+                        };
+                    }
+                });
 
             return {
-                page: data.page,
-                results: results,
-                total_pages: data.total_pages,
-                total_results: data.total_results,
+                page: response.data.page,
+                results: filteredResults,
+                total_pages: response.data.total_pages,
+                total_results: response.data.total_results,
             };
         } catch (error: any) {
             console.error('TMDB Trending Error:', error.message);
@@ -403,9 +458,8 @@ class TMDBService {
     // Get movie genres
     async getMovieGenres(): Promise<{ id: number; name: string }[]> {
         try {
-            const response = await this.axiosInstance.get<TMDBGenresResponse>('/genre/movie/list');
-            const data = response.data;
-            return data.genres || [];
+            const response = await this.axiosInstance.get<{ genres: { id: number; name: string }[] }>('/genre/movie/list');
+            return response.data.genres || [];
         } catch (error: any) {
             console.error('TMDB Genres Error:', error.message);
             throw new Error(`Failed to fetch genres: ${error.message}`);
@@ -415,9 +469,8 @@ class TMDBService {
     // Get TV season details
     async getTVSeasonDetails(tvId: number, seasonNumber: number): Promise<any> {
         try {
-            const response = await this.axiosInstance.get<TMDBSeasonResponse>(`/tv/${tvId}/season/${seasonNumber}`);
-            const data = response.data;
-            return data;
+            const response = await this.axiosInstance.get<any>(`/tv/${tvId}/season/${seasonNumber}`);
+            return response.data;
         } catch (error: any) {
             console.error("TMDB Season Details Error:", error.message);
 
@@ -439,15 +492,14 @@ class TMDBService {
     // Get all TV show seasons
     async getTVSeasons(tvId: number): Promise<any> {
         try {
-            const response = await this.axiosInstance.get<TMDBTVDetailsResponse>(`/tv/${tvId}`);
-            const data = response.data;
+            const response = await this.axiosInstance.get<any>(`/tv/${tvId}`);
             return {
-                seasons: data,
-                totalSeasons: data.number_of_seasons || 0,
-                totalEpisodes: data.number_of_episodes || 0
+                seasons: response.data.seasons,
+                totalSeasons: response.data.number_of_seasons,
+                totalEpisodes: response.data.number_of_episodes
             };
-        } catch (error: any) {
-            console.error("TMDB Seasons Error:", error.message);
+        } catch (error) {
+            console.error("TMDB Seasons Error:", error);
             throw new Error("Failed to fetch TV seasons");
         }
     }
@@ -459,29 +511,29 @@ class TMDBService {
                 params: { query, page },
             });
 
-            const data = response.data;
-            
-            const results: TMDBTVShow[] = data.results.map((item) => ({
+            const results = response.data.results.map((item) => ({
                 id: item.id,
-                name: item.name || '',
+                name: item.name || 'Unknown TV Show',
+                title: item.name || 'Unknown TV Show', // Add title alias
                 overview: item.overview,
                 poster_path: item.poster_path,
                 backdrop_path: item.backdrop_path,
                 first_air_date: item.first_air_date || '',
+                release_date: item.first_air_date || '', // Add release_date alias
                 vote_average: item.vote_average,
                 vote_count: item.vote_count,
-                genre_ids: item.genre_ids,
-                media_type: 'tv',
+                genre_ids: item.genre_ids || [],
+                media_type: 'tv' as const,
             }));
 
             return {
-                page: data.page,
+                page: response.data.page,
                 results: results,
-                total_pages: data.total_pages,
-                total_results: data.total_results,
+                total_pages: response.data.total_pages,
+                total_results: response.data.total_results,
             };
-        } catch (error: any) {
-            console.error("TMDB TV Search Error:", error.message);
+        } catch (error) {
+            console.error("TMDB TV Search Error:", error);
             throw new Error("Failed to search TV shows");
         }
     }
