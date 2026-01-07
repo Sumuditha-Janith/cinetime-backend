@@ -226,7 +226,7 @@ class TMDBService {
         }
     }
 
-// Get all TV show seasons
+    // Get all TV show seasons
     async getTVSeasons(tvId: number): Promise<any> {
         try {
             const response = await this.axiosInstance.get(`/tv/${tvId}`);
@@ -241,7 +241,7 @@ class TMDBService {
         }
     }
 
-// Search TV shows only
+    // Search TV shows only
     async searchTVShows(query: string, page: number = 1): Promise<TMDBResponse> {
         try {
             const response = await this.axiosInstance.get("/search/tv", {
@@ -254,7 +254,7 @@ class TMDBService {
         }
     }
 
-  // Get image URL helper
+    // Get image URL helper
     getImageUrl(path: string | null, size: 'w92' | 'w154' | 'w185' | 'w342' | 'w500' | 'w780' | 'original' = 'w500'): string {
         if (!path) return '';
         return `https://image.tmdb.org/t/p/${size}${path}`;
