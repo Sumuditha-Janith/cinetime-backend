@@ -1,7 +1,8 @@
 import express from "express";
 import cors from "cors";
 import authRouter from "./routes/auth.routes";
-import mediaRouter from "./routes/media.routes"; //mediaroute
+import mediaRouter from "./routes/media.routes";
+import aiRouter from "./routes/ai.routes"; // Add this import
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import passwordRouter from "./routes/password.routes";
@@ -21,8 +22,11 @@ app.use(
     })
 );
 
+// Routes
 app.use("/api/v1/auth", authRouter);
-app.use("/api/v1/media", mediaRouter); //route added
+app.use("/api/v1/media", mediaRouter);
+app.use("/api/v1/ai", aiRouter); // Add this line
+app.use("/api/v1/password", passwordRouter);
 
 app.get("/", (_req, res) => {
     res.send("CINETIME Backend is Running 🎬");
@@ -41,5 +45,3 @@ mongoose
 app.listen(SERVER_PORT, () => {
     console.log(`🚀 Server running on http://localhost:${SERVER_PORT}`);
 });
-
-app.use("/api/v1/password", passwordRouter);
