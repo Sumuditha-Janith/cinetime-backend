@@ -18,6 +18,7 @@ import {
     testStats
 } from "../controllers/media.controller";
 import { authenticate } from "../middleware/auth";
+import { generateMediaReport } from "../controllers/report.controller";
 
 const router = Router();
 
@@ -38,13 +39,10 @@ router.get("/watchlist/debug", authenticate, debugWatchlist); // Debug endpoint
 router.put("/watchlist/:mediaId/status", authenticate, updateWatchStatus); // Update movie/TV show status
 router.delete("/watchlist/:mediaId", authenticate, removeFromWatchlist); // Remove from watchlist
 router.get("/watchlist/test", authenticate, testStats); // Test stats endpoint
-
-// TV Show Episode Routes
+router.get("/report", authenticate, generateMediaReport); //pdf
 router.get("/tv/:tmdbId/episodes", authenticate, getTVShowEpisodes); // Get episodes for a TV show
 router.post("/tv/:tmdbId/season/:season/fetch", authenticate, fetchTVShowEpisodes); // Fetch episodes from TMDB
 router.put("/episodes/:episodeId/status", authenticate, updateEpisodeStatus); // Update episode status
-
-// Episode Statistics Route
 router.get("/episodes/stats", authenticate, getEpisodeStatistics); // Get episode statistics
 
 export default router;

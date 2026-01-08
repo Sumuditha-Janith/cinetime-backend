@@ -2,10 +2,9 @@ import express from "express";
 import cors from "cors";
 import authRouter from "./routes/auth.routes";
 import mediaRouter from "./routes/media.routes";
-import aiRouter from "./routes/ai.routes"; // Add this import
+import passwordRouter from "./routes/password.routes";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
-import passwordRouter from "./routes/password.routes";
 
 dotenv.config();
 
@@ -25,7 +24,6 @@ app.use(
 // Routes
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/media", mediaRouter);
-app.use("/api/v1/ai", aiRouter); // Add this line
 app.use("/api/v1/password", passwordRouter);
 
 app.get("/", (_req, res) => {
