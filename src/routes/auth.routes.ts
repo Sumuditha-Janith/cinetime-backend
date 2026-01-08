@@ -4,7 +4,10 @@ import {
     handleRefreshToken,
     login,
     register,
-    verifyOTP
+    verifyOTP,
+    updateProfile,
+    changePassword,
+    deleteAccount
 } from "../controllers/auth.controller";
 import { authenticate } from "../middleware/auth";
 
@@ -15,5 +18,8 @@ router.post("/verify-otp", verifyOTP);
 router.post("/login", login);
 router.post("/refresh", handleRefreshToken);
 router.get("/me", authenticate, getMyDetails);
+router.put("/me", authenticate, updateProfile);
+router.put("/me/change-password", authenticate, changePassword);
+router.delete("/me", authenticate, deleteAccount);
 
 export default router;

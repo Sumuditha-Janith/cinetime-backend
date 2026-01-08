@@ -204,3 +204,126 @@ export const handleRefreshToken = async (req: Request, res: Response): Promise<v
 export const registerAdmin = async (_req: Request, _res: Response): Promise<void> => {
     // not implemented yet. will implement later.
 };
+
+export const updateProfile = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+
+        const userId = req.user.sub;
+        const { firstname, lastname } = req.body;
+
+        if (!firstname || !lastname) {
+            res.status(400).json({ message: "First name and last name are required" });
+            return;
+        }
+
+        const user = await User.findById(userId);
+        if (!user) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
+
+        user.firstname = firstname.trim();
+        user.lastname = lastname.trim();
+        await user.save();
+
+        res.status(200).json({
+            message: "Profile updated successfully",
+            data: {
+                firstname: user.firstname,
+                lastname: user.lastname,
+                email: user.email
+            }
+        });
+    } catch (err: any) {
+        res.status(500).json({ message: err?.message });
+    }
+};
+
+export const changePassword = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+
+        const userId = req.user.sub;
+        const { currentPassword, newPassword } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            res.status(400).json({ message: "Current password and new password are required" });
+            return;
+        }
+
+        if (newPassword.length < 6) {
+            res.status(400).json({ message: "New password must be at least 6 characters" });
+            return;
+        }
+
+        const user = await User.findById(userId);
+        if (!user) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
+
+        // Verify current password
+        const valid = await bcrypt.compare(currentPassword, user.password);
+        if (!valid) {
+            res.status(401).json({ message: "Current password is incorrect" });
+            return;
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        user.password = hashedPassword;
+        await user.save();
+
+        res.status(200).json({
+            message: "Password changed successfully"
+        });
+    } catch (err: any) {
+        res.status(500).json({ message: err?.message });
+    }
+};
+
+export const deleteAccount = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+
+        const userId = req.user.sub;
+        const { password } = req.body;
+
+        if (!password) {
+            res.status(400).json({ message: "Password is required to delete account" });
+            return;
+        }
+
+        const user = await User.findById(userId);
+        if (!user) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
+
+        // Verify password
+        const valid = await bcrypt.compare(password, user.password);
+        if (!valid) {
+            res.status(401).json({ message: "Password is incorrect" });
+            return;
+        }
+
+        // Delete user
+        await User.findByIdAndDelete(userId);
+
+        res.status(200).json({
+            message: "Account deleted successfully"
+        });
+    } catch (err: any) {
+        res.status(500).json({ message: err?.message });
+    }
+};
