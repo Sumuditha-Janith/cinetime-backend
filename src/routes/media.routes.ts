@@ -13,7 +13,8 @@ import {
     addTVShowToWatchlist,
     fetchTVShowEpisodes,
     updateEpisodeStatus,
-    getEpisodeStatistics
+    getEpisodeStatistics,
+    deleteTVShowEpisodes
 } from "../controllers/media.controller";
 import { authenticate } from "../middleware/auth";
 import { generateMediaReport } from "../controllers/report.controller";
@@ -40,5 +41,6 @@ router.get("/tv/:tmdbId/episodes", authenticate, getTVShowEpisodes); // Get epis
 router.post("/tv/:tmdbId/season/:season/fetch", authenticate, fetchTVShowEpisodes); // Fetch episodes from TMDB
 router.put("/episodes/:episodeId/status", authenticate, updateEpisodeStatus); // Update episode status
 router.get("/episodes/stats", authenticate, getEpisodeStatistics); // Get episode statistics
+router.delete("/tv/:tmdbId/episodes", authenticate, deleteTVShowEpisodes);
 
 export default router;

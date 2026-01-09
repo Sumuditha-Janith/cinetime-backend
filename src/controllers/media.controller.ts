@@ -297,7 +297,8 @@ export const removeFromWatchlist = async (req: AuthRequest, res: Response): Prom
 
         const { mediaId } = req.params;
 
-        const media = await Media.findOneAndDelete({
+        // First, find the media to check if it's a TV show
+        const media = await Media.findOne({
             _id: mediaId,
             addedBy: req.user.sub,
         });
@@ -307,10 +308,51 @@ export const removeFromWatchlist = async (req: AuthRequest, res: Response): Prom
             return;
         }
 
+        // If it's a TV show, delete all episodes associated with it
+        if (media.type === "tv") {
+            await Episode.deleteMany({
+                tmdbId: media.tmdbId,
+                addedBy: req.user.sub,
+            });
+            console.log(`🗑️ Deleted all episodes for TV show ${media.title} (ID: ${media.tmdbId})`);
+        }
+
+        // Delete the media from watchlist
+        await Media.findByIdAndDelete(mediaId);
+
         res.status(200).json({
             message: "Removed from watchlist successfully",
+            deletedEpisodes: media.type === "tv" ? true : false,
         });
     } catch (err: any) {
+        console.error("Remove from watchlist error:", err);
+        res.status(500).json({ message: err?.message });
+    }
+};
+
+export const deleteTVShowEpisodes = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+
+        const { tmdbId } = req.params;
+
+        // Delete all episodes for this TV show and user
+        const result = await Episode.deleteMany({
+            tmdbId: Number(tmdbId),
+            addedBy: req.user.sub,
+        });
+
+        console.log(`🗑️ Deleted ${result.deletedCount} episodes for TV show ID: ${tmdbId}`);
+
+        res.status(200).json({
+            message: "TV show episodes deleted successfully",
+            deletedCount: result.deletedCount,
+        });
+    } catch (err: any) {
+        console.error("Delete TV show episodes error:", err);
         res.status(500).json({ message: err?.message });
     }
 };
